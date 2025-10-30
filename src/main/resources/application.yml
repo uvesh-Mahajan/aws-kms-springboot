@@ -1,0 +1,14 @@
+aws:
+  region: us-east-1
+  kms:
+    key-id: arn:aws:kms:us-east-1:948976367185:key/70e01ce3-5b37-4632-86c9-88836af6cb1e
+    alias-name: alias/springboot-dynamic-key-kmsTue
+    keyCreationProcess: DYNAMIC
+  credentials:
+    access-key: AKIA5Z43GGZIX257TNFE       # optional (use for local only)
+    secret-key: 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    # optional (use for local only)
+
+logging:
+  level:
+    software.amazon.awssdk: DEBUG
+    software.amazon.awssdk.services.kms: DEBUG
