@@ -1,14 +1,23 @@
+server:
+  port: 8085
+
 aws:
   region: us-east-1
+
+  # KMS Configuration
   kms:
-    key-id: arn:aws:kms:us-east-1:948976367185:key/70e01ce3-5b37-4632-86c9-88836af6cb1e
+    key-id: arn:aws:kms:us-east-1:948976367185:key/6add9659-b426-4dd8-8a12-8297b720e90f
+    assume-role-arn: arn:aws:iam::<ACCOUNT_ID>:role/kms-key-creator-role
     alias-name: alias/springboot-dynamic-key-kmsTue
-    keyCreationProcess: DYNAMIC
+    keyCreationProcess: CONSOLE
+
+  # Credentials (for local development only)
   credentials:
-    access-key:        # optional (use for local only)
-    secret-key:     # optional (use for local only)
+    access-key: AKIA5Z43GGZIX257TNFE          # ⚠️ Optional: local testing only
+    secret-key: A17xmu53kyYl1nxh5O3/qL71VzaeJQ3x0lRPWaWH  # ⚠️ Optional: local testing only
 
 logging:
   level:
+    root: INFO
     software.amazon.awssdk: DEBUG
     software.amazon.awssdk.services.kms: DEBUG

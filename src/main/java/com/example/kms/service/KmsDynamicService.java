@@ -1,9 +1,12 @@
 package com.example.kms.service;
 
 import java.util.Base64;
+import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+
+import com.nimbusds.jose.jwk.JWK;
 
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
@@ -114,5 +117,23 @@ public class KmsDynamicService implements KmsKeyOperationsService {
         DecryptResponse response = kmsClient.decrypt(request);
         return new String(response.plaintext().asByteArray());
     }
+
+	@Override
+	public JWK jwkFromKms() {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	@Override
+	public KmsClient getKmsClient() {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	@Override
+	public Map<String, Object> getJwks() throws Exception {
+		// TODO Auto-generated method stub
+		return null;
+	}
 }
 

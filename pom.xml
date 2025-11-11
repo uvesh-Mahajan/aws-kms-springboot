@@ -39,6 +39,18 @@
 			<artifactId>kms</artifactId>
 			<version>${aws.sdk.version}</version>
 		</dependency>
+		
+		  <dependency>
+    <groupId>software.amazon.awssdk</groupId>
+    <artifactId>sts</artifactId>
+    <version>${aws.sdk.version}</version>
+  </dependency>
+		
+		<dependency>
+  			<groupId>com.nimbusds</groupId>
+  			<artifactId>nimbus-jose-jwt</artifactId>
+  			<version>9.31</version>
+		</dependency>
 	</dependencies>
 
 	<build>
