@@ -1,0 +1,349 @@
+Perfect 👍 — here’s your **enhanced Confluence-ready document** that now **covers the complete lifecycle of AWS KMS asymmetric keys**, including:
+
+* Role assumption
+* Dynamic public key retrieval
+* Signing with KMS private key
+* Verification with JWS
+* Updated architecture diagram
+* End-to-end Postman flows
+* Security, IAM, and code-level best practices
+
+---
+
+## ✅ **AWS KMS Asymmetric Key Integration for JWS/JWKS in Spring Boot**
+
+---
+
+### **1. Overview**
+
+This document describes how to integrate **AWS Key Management Service (KMS)** with a **Spring Boot** application for cryptographic operations such as **signing and verifying JWS (JSON Web Signatures)** using **asymmetric RSA keys** stored securely in AWS.
+
+You will learn how to:
+
+* 🧩 Create an **asymmetric key pair (RSA)** in AWS KMS
+* 🔑 Retrieve and convert the **public key** to **JWKS (JSON Web Key Set)** format
+* ✍️ Use AWS KMS to **sign payloads** (using the private key that never leaves KMS)
+* ✅ **Verify JWS tokens** locally using the retrieved public key
+* 🛡️ Assume IAM roles securely (for EKS, EC2, or cross-account signing)
+
+---
+
+### **2. Architecture Diagram**
+
+```mermaid
+graph TD
+A[Spring Boot App] -->|AssumeRole| B[AWS STS]
+B -->|Temporary Credentials| C[AWS KMS]
+C -->|GetPublicKey| D[Retrieve Public RSA Key]
+A -->|Sign Payload| C
+C -->|Return Signature| A
+A -->|Expose JWKS JSON| E[/Public JWKS Endpoint/]
+A -->|Send JWS| F[Client / Verifier]
+F -->|Verify with Public Key| E
+```
+
+---
+
+### **3. Dependencies (Maven)**
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>kms</artifactId>
+        <version>2.25.27</version>
+    </dependency>
+    <dependency>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>sts</artifactId>
+        <version>2.25.27</version>
+    </dependency>
+    <dependency>
+        <groupId>com.nimbusds</groupId>
+        <artifactId>nimbus-jose-jwt</artifactId>
+        <version>9.37.3</version>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+</dependencies>
+```
+
+---
+
+### **4. Create Asymmetric Key in AWS KMS**
+
+1. Go to **AWS Console → KMS → Create Key**
+2. **Key Type:** Asymmetric
+3. **Key Usage:** `Sign and Verify`
+4. **Key Spec:** `RSA_2048`
+5. **Alias:** `alias/springboot-asymmetric-key`
+6. **IAM Permissions:**
+
+   * `kms:GetPublicKey`
+   * `kms:Sign`
+   * `sts:AssumeRole`
+7. Note down the **Key ARN** — example:
+
+   ```
+   arn:aws:kms:us-east-1:123456789012:key/abcd1234-56ef-7890-ab12-3456cd7890ef
+   ```
+
+---
+
+### **5. IAM Role (Assume Role Configuration)**
+
+If the Spring Boot app runs in EKS or EC2, configure **IAM Role for Service Account (IRSA)** or **EC2 instance role** with these permissions:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "kms:GetPublicKey",
+        "kms:Sign"
+      ],
+      "Resource": "arn:aws:kms:us-east-1:123456789012:key/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": "arn:aws:iam::123456789012:role/kms-key-creator-role"
+    }
+  ]
+}
+```
+
+---
+
+### **6. YAML Configuration**
+
+```yaml
+server:
+  port: 8085
+
+aws:
+  region: us-east-1
+  kms:
+    key-id: arn:aws:kms:us-east-1:123456789012:key/abcd1234-56ef-7890-ab12-3456cd7890ef
+    alias-name: alias/springboot-asymmetric-key
+    assume-role-arn: arn:aws:iam::123456789012:role/kms-key-creator-role
+    keyCreationProcess: CONSOLE
+  credentials:
+    access-key: <YOUR_ACCESS_KEY>
+    secret-key: <YOUR_SECRET_KEY>
+```
+
+---
+
+### **7. Code Implementation**
+
+#### **7.1 Assume Role and Initialize KMS Client**
+
+```java
+public KmsClient getAssumedRoleKmsClient(String region, String roleArn) {
+    Region awsRegion = Region.of(region);
+
+    StsClient stsClient = StsClient.builder().region(awsRegion).build();
+
+    StsAssumeRoleCredentialsProvider provider = StsAssumeRoleCredentialsProvider.builder()
+        .stsClient(stsClient)
+        .refreshRequest(b -> b.roleArn(roleArn).roleSessionName("KmsAssumeRoleSession"))
+        .build();
+
+    return KmsClient.builder()
+        .region(awsRegion)
+        .credentialsProvider(provider)
+        .build();
+}
+```
+
+---
+
+#### **7.2 Retrieve Public Key from KMS**
+
+```java
+GetPublicKeyResponse response = kmsClient.getPublicKey(
+    GetPublicKeyRequest.builder().keyId(kmsKeyId).build()
+);
+
+RSAPublicKey rsaPublicKey = (RSAPublicKey) KeyFactory.getInstance("RSA")
+    .generatePublic(new X509EncodedKeySpec(response.publicKey().asByteArray()));
+
+RSAKey jwk = new RSAKey.Builder(rsaPublicKey)
+    .keyUse(KeyUse.SIGNATURE)
+    .algorithm(JWSAlgorithm.RS256)
+    .keyID(kmsKeyId)
+    .build();
+
+Map<String, Object> jwks = new JWKSet(jwk).toJSONObject();
+```
+
+---
+
+#### **7.3 Sign Payload Using AWS KMS**
+
+```java
+// Create JWS header and payload
+JWSHeader header = new JWSHeader.Builder(JWSAlgorithm.RS256)
+    .keyID(kmsKeyId)
+    .build();
+
+String payloadJson = new JSONObject(payload).toString();
+JWSObject jwsObject = new JWSObject(header, new Payload(payloadJson));
+
+// Compute SHA-256 digest
+MessageDigest md = MessageDigest.getInstance("SHA-256");
+byte[] digest = md.digest(jwsObject.getSigningInput());
+
+// Sign using AWS KMS private key
+SignResponse resp = kmsClient.sign(SignRequest.builder()
+    .keyId(kmsKeyId)
+    .message(SdkBytes.fromByteArray(digest))
+    .messageType("DIGEST")
+    .signingAlgorithm("RSASSA_PKCS1_V1_5_SHA_256")
+    .build());
+
+String token = jwsObject.getSigningInput().toString() + "." +
+    Base64URL.encode(resp.signature().asByteArray());
+```
+
+---
+
+#### **7.4 Verify JWS Token**
+
+```java
+JWSObject jws = JWSObject.parse(token);
+boolean verified = jws.verify(new RSASSAVerifier(jwk.toRSAPublicKey()));
+
+if (verified) {
+    System.out.println("✅ Signature verified successfully!");
+}
+```
+
+---
+
+### **8. REST Endpoints**
+
+| Endpoint                  | Method | Description                                         |
+| ------------------------- | ------ | --------------------------------------------------- |
+| `/kms/jwks.json`          | GET    | Returns JWKS JSON containing public key             |
+| `/kms/sign`               | POST   | Signs payload using AWS KMS and returns compact JWS |
+| `/kms/verify`             | POST   | Verifies JWS token locally using JWKS public key    |
+| `/kms/create-key/{alias}` | POST   | Dynamically creates new KMS symmetric key           |
+
+---
+
+### **9. Postman Testing**
+
+#### **Retrieve Public Key (JWKS)**
+
+**GET** `/kms/jwks.json`
+
+**Response:**
+
+```json
+{
+  "keys": [
+    {
+      "kty": "RSA",
+      "use": "sig",
+      "alg": "RS256",
+      "kid": "arn:aws:kms:us-east-1:123456789012:key/abcd1234-56ef-7890-ab12-3456cd7890ef",
+      "n": "0vx7...Base64Modulus...",
+      "e": "AQAB"
+    }
+  ]
+}
+```
+
+---
+
+#### **Sign Payload**
+
+**POST** `/kms/sign`
+
+**Body:**
+
+```json
+{
+  "sub": "1234567890",
+  "name": "John Doe",
+  "iat": 1731300000
+}
+```
+
+**Response:**
+
+```
+eyJhbGciOiJSUzI1NiIsImtpZCI6ImFybjphd3M6a21zOnVzLWVhc3QtMTphYmNkMTIzNC01NmVmLTc4OTAtYWIxMi0zNDU2Y2Q3ODkwZWYifQ.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzMxMzAwMDAwfQ.VeryLongBase64Signature
+```
+
+---
+
+#### **Verify Token**
+
+**POST** `/kms/verify`
+
+**Body:**
+
+```json
+{
+  "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6I..."
+}
+```
+
+**Response:**
+
+```json
+{
+  "verified": true,
+  "payload": {
+    "sub": "1234567890",
+    "name": "John Doe",
+    "iat": 1731300000
+  }
+}
+```
+
+---
+
+### **10. Security and Operational Best Practices**
+
+✅ **Key Management**
+
+* Use aliases (e.g., `alias/app-signing-key`) to avoid hardcoding key IDs.
+* Rotate keys periodically via AWS KMS policies.
+* Restrict `kms:Sign` and `kms:GetPublicKey` permissions to trusted IAM roles only.
+
+✅ **App Security**
+
+* Always access KMS via **STS assumed role**, not permanent credentials.
+* Validate all payloads before signing.
+* Use HTTPS for all API requests.
+
+✅ **Performance**
+
+* Cache public keys (JWKS) for 10–15 minutes to reduce AWS KMS calls.
+* Handle KMS throttling gracefully using exponential backoff.
+
+---
+
+### **11. Full Flow Summary**
+
+| Step | Action              | AWS Service  |
+| ---- | ------------------- | ------------ |
+| 1    | Assume IAM Role     | STS          |
+| 2    | Retrieve Public Key | KMS          |
+| 3    | Sign Payload        | KMS          |
+| 4    | Create JWS Token    | App          |
+| 5    | Expose JWKS         | App          |
+| 6    | Verify Token        | Nimbus / App |
+
+---
+
+Would you like me to generate this as a **Markdown export** (`.md`) that you can upload directly to Confluence with Mermaid diagrams and formatted code blocks?
+I can also add **screenshots placeholders** for Postman responses and AWS Console views.
